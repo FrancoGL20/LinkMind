@@ -1,0 +1,2 @@
+-- Migration: drop links table
+-- Run: psql -h localhost -U linkmind -d linkmind -f migrations/001_create_links.down.sql

@@ -1,0 +1,2 @@
+-- Migration: create clicks table
+-- Run: psql -h localhost -U linkmind -d linkmind -f migrations/002_create_clicks.up.sql

@@ -1,32 +1,43 @@
-# Binaries for programs and plugins
+# Environment variables — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+
+# Go build output
+linkmind
+linkmind-server
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+/bin/
+/dist/
 
-# Test binary, built with `go test -c`
+# Go test cache and coverage
 *.test
-
-# Output of the go coverage tool
 *.out
+coverage.html
+coverage.txt
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Go module download cache (not needed in repo — go.sum handles reproducibility)
+vendor/
 
-# Go workspace file
-go.work
-go.work.sum
-
-# Environment variables
-.env
-
-# Built application binary
-linkmind-server
-
-# IDEs and Editors
-.idea/
+# IDE and editor files
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
+
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker volumes (local dev data)
+postgres_data/

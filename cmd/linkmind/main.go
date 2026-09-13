@@ -12,6 +12,7 @@ import (
 
 	"github.com/FrancoGL20/LinkMind/internal/config"
 	"github.com/FrancoGL20/LinkMind/internal/handler"
+	"github.com/FrancoGL20/LinkMind/internal/repository"
 	"github.com/FrancoGL20/LinkMind/internal/service"
 )
 
@@ -41,10 +42,17 @@ func main() {
 	log.Printf("Database connected successfully (max_conns=%d)", pool.Config().MaxConns)
 
 	// --- Dependency wiring (Clean Architecture: outer → inner) ---
-	// Service layer (business logic)
-	linkSvc := service.NewLinkService()
+	// The dependency graph flows from right to left:
+	//   pool → linkRepo → linkSvc → linkHandler
+	// Each layer only knows about the layer immediately below it (via interface).
 
-	// Handler layer (HTTP boundary)
+	// Repository layer (data access — owns all SQL)
+	linkRepo := repository.NewLinkRepository(pool)
+
+	// Service layer (business logic — owns validation and orchestration)
+	linkSvc := service.NewLinkService(linkRepo)
+
+	// Handler layer (HTTP boundary — owns JSON encode/decode)
 	linkHandler := handler.NewLinkHandler(linkSvc)
 
 	// --- Router setup ---

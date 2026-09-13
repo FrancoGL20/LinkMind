@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/FrancoGL20/LinkMind/internal/service"
@@ -44,6 +45,7 @@ func (h *LinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnprocessableEntity, validationErr.Error())
 			return
 		}
+		log.Printf("ERROR create link: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to create link")
 		return
 	}

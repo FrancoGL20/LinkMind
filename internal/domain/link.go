@@ -1,6 +1,14 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrNotFound is the sentinel error returned when a requested resource does not exist.
+// Using a sentinel error in the domain package keeps the service and handler layers
+// decoupled from any specific storage technology (pgx, SQL, etc.).
+var ErrNotFound = errors.New("not found")
 
 // AIStatus represents the state of the AI enrichment pipeline for a link.
 type AIStatus string

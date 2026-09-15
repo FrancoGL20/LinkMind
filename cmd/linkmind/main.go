@@ -54,6 +54,7 @@ func main() {
 
 	// Handler layer (HTTP boundary — owns JSON encode/decode)
 	linkHandler := handler.NewLinkHandler(linkSvc)
+	redirectHandler := handler.NewRedirectHandler(linkSvc)
 
 	// --- Router setup ---
 	r := chi.NewRouter()
@@ -62,8 +63,13 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// API routes
+	// API routes (protected namespace — future auth middleware goes here)
 	r.Post("/api/links", linkHandler.Create)
+
+	// Public redirect route — must be outside /api to get a clean short URL.
+	// Pattern: GET /{code} — chi captures everything after / as "code".
+	// This route is registered LAST so that /api/... routes take priority.
+	r.Get("/{code}", redirectHandler.Redirect)
 
 	// --- Start HTTP server ---
 	addr := ":" + cfg.Port

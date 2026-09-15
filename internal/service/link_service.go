@@ -31,6 +31,7 @@ func (e *ValidationError) Error() string {
 // LinkService defines the business operations for link management.
 type LinkService interface {
 	Create(ctx context.Context, rawURL string) (*domain.Link, error)
+	GetByCode(ctx context.Context, code string) (*domain.Link, error)
 }
 
 // linkService implements the LinkService interface.
@@ -73,4 +74,16 @@ func (s *linkService) Create(ctx context.Context, rawURL string) (*domain.Link, 
 	}
 
 	return created, nil
+}
+
+// GetByCode retrieves an active link by its short code.
+// The service delegates entirely to the repository — there is no additional
+// business rule for a lookup. The domain.ErrNotFound sentinel is returned
+// as-is so that the handler layer can distinguish 404 from 500.
+func (s *linkService) GetByCode(ctx context.Context, code string) (*domain.Link, error) {
+	link, err := s.repo.FindByCode(ctx, code)
+	if err != nil {
+		return nil, err // ErrNotFound or a real storage error — caller decides
+	}
+	return link, nil
 }

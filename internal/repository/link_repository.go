@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/FrancoGL20/LinkMind/internal/domain"
+	"github.com/FrancoGL20/LinkMind/internal/service"
 )
 
 // linkRepository is the concrete PostgreSQL implementation that satisfies
@@ -27,10 +27,10 @@ func NewLinkRepository(pool *pgxpool.Pool) *linkRepository {
 	return &linkRepository{pool: pool}
 }
 
-// Create inserts a link and sets its code within a single transaction.
+// Create inserts a link and sets its Base62 code within a single transaction.
 //
 // Why a transaction?
-//   The code is derived from the BIGSERIAL id (strconv now, Base62 in step 2.1).
+//   The code is derived from the BIGSERIAL id via Base62 encoding.
 //   We can't compute the code before INSERT (we don't have the id yet).
 //   Using a transaction guarantees that INSERT + UPDATE code happen atomically:
 //   either both succeed, or neither does. No partial state is possible.
@@ -38,15 +38,10 @@ func NewLinkRepository(pool *pgxpool.Pool) *linkRepository {
 // Transaction flow:
 //   BEGIN
 //     INSERT INTO links (...) VALUES (...) RETURNING id  → get the id
-//     code = strconv(id)                                  → compute code
-//     UPDATE links SET code = $code WHERE id = $id        → set real code
-//     SELECT * FROM links WHERE id = $id                  → return full record
+//     code = Base62(id)                                  → compute short code
+//     UPDATE links SET code = $code WHERE id = $id       → persist the code
 //   COMMIT
-//
-// TODO (step 2.1): Replace with a CTE that does all of this in a single round-trip:
-//   WITH ins AS (INSERT ... RETURNING id),
-//        upd AS (UPDATE links SET code = base62(ins.id) FROM ins WHERE links.id = ins.id RETURNING *)
-//   SELECT * FROM upd;
+//   Return the final link with the real Base62 code.
 func (r *linkRepository) Create(ctx context.Context, link *domain.Link) (*domain.Link, error) {
 	// Acquire a connection from the pool and begin a transaction.
 	tx, err := r.pool.Begin(ctx)
@@ -94,13 +89,13 @@ func (r *linkRepository) Create(ctx context.Context, link *domain.Link) (*domain
 		return nil, fmt.Errorf("create link insert: %w", err)
 	}
 
-	// Step 2: Compute the final code from the database-assigned id.
-	// TODO (step 2.1): Replace strconv.FormatInt with Base62(created.ID)
-	realCode := strconv.FormatInt(created.ID, 10)
+	// Step 2: Compute the Base62 code from the database-assigned id.
+	// This is the real short code that users will see in URLs (e.g. "gW3k").
+	realCode := service.Encode(created.ID)
 
 	// Step 3: Only update if the code needs to change.
-	// With strconv: id == code always (both are the same integer), so this is a no-op.
-	// With Base62 (step 2.1): Base62(id) ≠ strconv(id), so the UPDATE runs correctly.
+	// With Base62: Encode(id) ≠ strconv(id) for all id > 0, so the UPDATE always runs.
+	// This conditional is kept for correctness — it is a cheap string comparison.
 	if realCode != created.Code {
 		const updateQuery = `UPDATE links SET code = $1, updated_at = NOW() WHERE id = $2`
 		_, err = tx.Exec(ctx, updateQuery, realCode, created.ID)

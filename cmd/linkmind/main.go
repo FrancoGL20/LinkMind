@@ -32,6 +32,12 @@ func main() {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
+	// Without a salt, an IP hash is reversible in minutes — warn but keep running,
+	// since analytics must never block local development.
+	if cfg.IPHashSalt == "" {
+		log.Println("WARNING: IP_HASH_SALT is not set — visitor IP hashes are reversible")
+	}
+
 	// Create the PostgreSQL connection pool.
 	pool, err := config.NewDBPool(cfg)
 	if err != nil {
@@ -43,18 +49,22 @@ func main() {
 
 	// --- Dependency wiring (Clean Architecture: outer → inner) ---
 	// The dependency graph flows from right to left:
-	//   pool → linkRepo → linkSvc → linkHandler
+	//   pool → linkRepo  → linkSvc  → linkHandler
+	//   pool → clickRepo → clickSvc → redirectHandler
 	// Each layer only knows about the layer immediately below it (via interface).
+	// main is the only place where the concrete pgx types are visible.
 
 	// Repository layer (data access — owns all SQL)
 	linkRepo := repository.NewLinkRepository(pool)
+	clickRepo := repository.NewClickRepository(pool)
 
 	// Service layer (business logic — owns validation and orchestration)
 	linkSvc := service.NewLinkService(linkRepo)
+	clickSvc := service.NewClickService(clickRepo, cfg.IPHashSalt)
 
 	// Handler layer (HTTP boundary — owns JSON encode/decode)
 	linkHandler := handler.NewLinkHandler(linkSvc)
-	redirectHandler := handler.NewRedirectHandler(linkSvc)
+	redirectHandler := handler.NewRedirectHandler(linkSvc, clickSvc)
 
 	// --- Router setup ---
 	r := chi.NewRouter()

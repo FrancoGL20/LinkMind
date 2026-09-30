@@ -32,6 +32,12 @@ func main() {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
+	// Without a salt, an IP hash is reversible in minutes — warn but keep running,
+	// since analytics must never block local development.
+	if cfg.IPHashSalt == "" {
+		log.Println("WARNING: IP_HASH_SALT is not set — visitor IP hashes are reversible")
+	}
+
 	// Create the PostgreSQL connection pool.
 	pool, err := config.NewDBPool(cfg)
 	if err != nil {
@@ -43,18 +49,27 @@ func main() {
 
 	// --- Dependency wiring (Clean Architecture: outer → inner) ---
 	// The dependency graph flows from right to left:
-	//   pool → linkRepo → linkSvc → linkHandler
+	//   pool → linkRepo  → linkSvc  → linkHandler
+	//   pool → clickRepo → clickSvc → redirectHandler
 	// Each layer only knows about the layer immediately below it (via interface).
+	// main is the only place where the concrete pgx types are visible.
 
 	// Repository layer (data access — owns all SQL)
 	linkRepo := repository.NewLinkRepository(pool)
+	clickRepo := repository.NewClickRepository(pool)
 
 	// Service layer (business logic — owns validation and orchestration)
 	linkSvc := service.NewLinkService(linkRepo)
+	clickSvc := service.NewClickService(clickRepo, cfg.IPHashSalt)
+	// StatsService reads from both repositories directly (linkRepo, clickRepo) —
+	// it is a reporting service, not a business-rule owner for links or clicks,
+	// so it does not go through linkSvc/clickSvc.
+	statsSvc := service.NewStatsService(linkRepo, clickRepo)
 
 	// Handler layer (HTTP boundary — owns JSON encode/decode)
 	linkHandler := handler.NewLinkHandler(linkSvc)
-	redirectHandler := handler.NewRedirectHandler(linkSvc)
+	redirectHandler := handler.NewRedirectHandler(linkSvc, clickSvc)
+	statsHandler := handler.NewStatsHandler(statsSvc)
 
 	// --- Router setup ---
 	r := chi.NewRouter()
@@ -65,6 +80,10 @@ func main() {
 
 	// API routes (protected namespace — future auth middleware goes here)
 	r.Post("/api/links", linkHandler.Create)
+	r.Get("/api/links", linkHandler.List)
+	r.Get("/api/links/{code}", linkHandler.Detail)
+	r.Delete("/api/links/{code}", linkHandler.Delete)
+	r.Get("/api/stats", statsHandler.GetStats)
 
 	// Public redirect route — must be outside /api to get a clean short URL.
 	// Pattern: GET /{code} — chi captures everything after / as "code".

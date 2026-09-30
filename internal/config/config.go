@@ -16,7 +16,8 @@ type Config struct {
 	DatabaseURL string
 
 	// Security
-	APIKey string
+	APIKey     string
+	IPHashSalt string // Secret salt for hashing visitor IPs before storing them
 
 	// AI (Gemini)
 	GeminiAPIKey string
@@ -38,6 +39,7 @@ func Load() *Config {
 		BaseURL:            getEnv("BASE_URL", "http://localhost:8080"),
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
 		APIKey:             getEnv("API_KEY", ""),
+		IPHashSalt:         getEnv("IP_HASH_SALT", ""),
 		GeminiAPIKey:       getEnv("GEMINI_API_KEY", ""),
 		GeminiModel:        getEnv("GEMINI_MODEL", "gemini-1.5-flash"),
 		RateLimitRPM:       getEnvInt("RATE_LIMIT_RPM", 60),

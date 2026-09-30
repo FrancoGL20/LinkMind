@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -171,6 +172,59 @@ func (r *linkRepository) FindAll(ctx context.Context, limit, offset int) ([]*dom
 	}
 
 	return links, nil
+}
+
+// Count returns the total number of active links.
+//
+// Used for two purposes: the "total" field of GET /api/links pagination
+// metadata, and the "total_links" field of GET /api/stats. Both need the
+// exact same number, so a single method is reused by LinkService.List and
+// StatsService.GetGlobalStats instead of duplicating the query.
+func (r *linkRepository) Count(ctx context.Context) (int64, error) {
+	const query = `SELECT COUNT(*) FROM links WHERE is_active = TRUE`
+
+	var total int64
+	if err := r.pool.QueryRow(ctx, query).Scan(&total); err != nil {
+		return 0, fmt.Errorf("link repository Count: %w", err)
+	}
+	return total, nil
+}
+
+// CountCreatedSince returns the number of active links created on or after
+// the given timestamp — used to compute "links_today" in GET /api/stats.
+//
+// The cutoff is calculated in Go (time.Now().Truncate(24*time.Hour)) rather
+// than with PostgreSQL's CURRENT_DATE, so the business decides what "today"
+// means (UTC) without depending on the database session's timezone setting.
+func (r *linkRepository) CountCreatedSince(ctx context.Context, since time.Time) (int64, error) {
+	const query = `SELECT COUNT(*) FROM links WHERE is_active = TRUE AND created_at >= $1`
+
+	var total int64
+	if err := r.pool.QueryRow(ctx, query, since).Scan(&total); err != nil {
+		return 0, fmt.Errorf("link repository CountCreatedSince: %w", err)
+	}
+	return total, nil
+}
+
+// Deactivate performs a soft delete: it sets is_active = FALSE instead of
+// removing the row, so click history (clicks.link_id → links.id) and past
+// analytics remain intact.
+//
+// The WHERE clause requires is_active = TRUE so that deactivating an
+// already-inactive (or non-existent) code affects zero rows — in both cases
+// we report domain.ErrNotFound, since from the caller's point of view there
+// is no active link left to delete.
+func (r *linkRepository) Deactivate(ctx context.Context, code string) error {
+	const query = `UPDATE links SET is_active = FALSE, updated_at = NOW() WHERE code = $1 AND is_active = TRUE`
+
+	tag, err := r.pool.Exec(ctx, query, code)
+	if err != nil {
+		return fmt.Errorf("link repository Deactivate: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("link with code %q: %w", code, domain.ErrNotFound)
+	}
+	return nil
 }
 
 // scanLink is a helper that scans a pgx row (or rows.Next() row) into a domain.Link.
